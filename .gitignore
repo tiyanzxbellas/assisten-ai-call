@@ -3,6 +3,9 @@
 *.env
 !.env.example
 
+# Node.js Dependencies
+node_modules/
+
 # WhatsApp Session Database (Sesi Login SQLite)
 *.db
 *.db-wal

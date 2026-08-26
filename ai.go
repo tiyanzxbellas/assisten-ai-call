@@ -73,7 +73,7 @@ func (c *Conversation) Chat(userPrompt string) (string, error) {
 		},
 		GenerationConfig: map[string]interface{}{
 			"temperature":     0.7,
-			"maxOutputTokens": 300,
+			"maxOutputTokens": 100,
 		},
 	}
 
@@ -84,10 +84,10 @@ func (c *Conversation) Chat(userPrompt string) (string, error) {
 
 	primaryModel := AppConfig.GeminiModel
 	if primaryModel == "" {
-		primaryModel = "gemini-3.6-flash"
+		primaryModel = "gemini-3.1-flash-lite"
 	}
 
-	fallbackModels := []string{primaryModel, "gemini-2.5-flash", "gemini-1.5-flash", "gemini-flash-latest"}
+	fallbackModels := []string{primaryModel, "gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-flash-latest"}
 	// Deduplicate
 	modelsToTry := make([]string, 0, len(fallbackModels))
 	seen := make(map[string]bool)
