@@ -11,24 +11,31 @@ import (
 )
 
 type Config struct {
-	GroqAPI      string
-	GeminiAPI    string
-	GeminiModel  string
-	SystemPrompt string
-	PromptLang   string
-	TTSCharacter string
-	TTSLang      string
-	TTSSpeed     float64
-	Owners       []string
+	GroqAPI       string
+	GeminiAPI     string
+	GeminiModel   string
+	OpenAIAPI     string
+	ElevenAPI     string
+	SystemPrompt  string
+	PromptLang    string
+	TTSEngine     string // "geminitts", "edgetts", "elevenlabs", "openai", "animetts", "google"
+	TTSCharacter  string
+	TTSVoice      string // Voice for Gemini TTS ("Puck", "Kore", "Aoede"), Edge TTS ("ms-MY-YasminNeural"), OpenAI ("nova")
+	ElevenVoiceID string // ElevenLabs Voice ID
+	TTSLang       string
+	TTSSpeed      float64
+	TTSPitch      string // Edge TTS Pitch (e.g. "+0Hz", "-1Hz")
+	Owners        []string
 }
 
 var AppConfig *Config
 
 const DefaultSystemPrompt = `Kamu adalah asisten suara AI pintar yang sedang berbicara lewat panggilan telepon WhatsApp.
 Aturan penting:
-1. Jawablah dengan singkat, ramah, jujur, dan alami seperti percakapan telepon manusia nyata (maksimal 2-3 kalimat per respon).
-2. JANGAN gunakan format markdown seperti bintang (*), pagar (#), bullet point (-), atau simbol tabel, karena responmu akan langsung diubah menjadi suara (Text-to-Speech).
-3. Gunakan Bahasa Indonesia yang santai dan sopan.`
+1. Jawablah dengan SINGKAT, RAMAH, dan ALAMI (maksimal 1-2 kalimat pendek, maksimal 25 kata).
+2. JANGAN memberikan jawaban yang terlalu panjang, bertele-tele, atau berbentuk daftar agar suara telepon tidak terpotong.
+3. JANGAN gunakan format markdown seperti bintang (*), pagar (#), bullet point (-), atau simbol tabel.
+4. Gunakan Bahasa Indonesia yang santai dan sopan.`
 
 func LoadConfig() *Config {
 	_ = godotenv.Load(".env")
@@ -44,9 +51,22 @@ func LoadConfig() *Config {
 		geminiAPI = os.Getenv("GEMINI_API_KEY")
 	}
 
+	openAIAPI := os.Getenv("OPENAI_API")
+	if openAIAPI == "" {
+		openAIAPI = os.Getenv("OPENAI_API_KEY")
+	}
+
+	elevenAPI := os.Getenv("ELEVENLABS_API")
+	if elevenAPI == "" {
+		elevenAPI = os.Getenv("ELEVEN_API")
+	}
+	if elevenAPI == "" {
+		elevenAPI = os.Getenv("ELEVENLABS_API_KEY")
+	}
+
 	geminiModel := os.Getenv("GEMINI_MODEL")
 	if geminiModel == "" {
-		geminiModel = "gemini-3.6-flash"
+		geminiModel = "gemini-3.1-flash-lite"
 	}
 
 	sysPrompt := os.Getenv("SYSTEM_PROMPT")
@@ -59,9 +79,39 @@ func LoadConfig() *Config {
 		promptLang = "id"
 	}
 
+	ttsEngine := strings.ToLower(strings.TrimSpace(os.Getenv("TTS_ENGINE")))
+	if ttsEngine == "" {
+		if elevenAPI != "" {
+			ttsEngine = "elevenlabs"
+		} else if openAIAPI != "" {
+			ttsEngine = "openai"
+		} else {
+			ttsEngine = "edgetts"
+		}
+	}
+
 	ttsChar := os.Getenv("TTS_CHARACTER")
 	if ttsChar == "" {
 		ttsChar = "特别周 Special Week (Umamusume Pretty Derby)"
+	}
+
+	ttsVoice := os.Getenv("TTS_VOICE")
+	if ttsVoice == "" {
+		if ttsEngine == "edgetts" {
+			ttsVoice = "ms-MY-YasminNeural"
+		} else if ttsEngine == "geminitts" {
+			ttsVoice = "Puck"
+		} else {
+			ttsVoice = "nova"
+		}
+	}
+
+	elevenVoiceID := os.Getenv("ELEVEN_VOICE_ID")
+	if elevenVoiceID == "" {
+		elevenVoiceID = os.Getenv("ELEVENLABS_VOICE_ID")
+	}
+	if elevenVoiceID == "" {
+		elevenVoiceID = "21m00Tcm4TlvDq8ikWAM" // Rachel
 	}
 
 	ttsLang := os.Getenv("TTS_LANG")
@@ -77,6 +127,11 @@ func LoadConfig() *Config {
 		}
 	}
 
+	ttsPitch := os.Getenv("TTS_PITCH")
+	if ttsPitch == "" {
+		ttsPitch = "-1Hz"
+	}
+
 	ownerStr := os.Getenv("OWNER")
 	var owners []string
 	if ownerStr != "" {
@@ -90,15 +145,21 @@ func LoadConfig() *Config {
 	}
 
 	AppConfig = &Config{
-		GroqAPI:      groqAPI,
-		GeminiAPI:    geminiAPI,
-		GeminiModel:  geminiModel,
-		SystemPrompt: sysPrompt,
-		PromptLang:   promptLang,
-		TTSCharacter: ttsChar,
-		TTSLang:      ttsLang,
-		TTSSpeed:     ttsSpeed,
-		Owners:       owners,
+		GroqAPI:       groqAPI,
+		GeminiAPI:     geminiAPI,
+		GeminiModel:   geminiModel,
+		OpenAIAPI:     openAIAPI,
+		ElevenAPI:     elevenAPI,
+		SystemPrompt:  sysPrompt,
+		PromptLang:    promptLang,
+		TTSEngine:     ttsEngine,
+		TTSCharacter:  ttsChar,
+		TTSVoice:      ttsVoice,
+		ElevenVoiceID: elevenVoiceID,
+		TTSLang:       ttsLang,
+		TTSSpeed:      ttsSpeed,
+		TTSPitch:      ttsPitch,
+		Owners:        owners,
 	}
 
 	if AppConfig.GroqAPI == "" {

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -20,6 +21,8 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 	_ "modernc.org/sqlite"
 )
+
+var botStartTime = time.Now()
 
 func main() {
 	log.Println("==================================================")
@@ -141,20 +144,111 @@ func handleMessage(client *whatsmeow.Client, callerClient *meowcaller.Client, ms
 	}
 	cmd := strings.ToLower(fields[0])
 
-	if cmd == "!aicall" || cmd == ".aicall" || cmd == "!call" || cmd == ".call" {
+	switch cmd {
+	case "!help", ".help", "!menu", ".menu":
+		helpText := fmt.Sprintf(`🤖 *WHATSAPP AI CALL ASSISTANT BOT* 🤖
+
+📌 *Perintah Utama:*
+• *!aicall <nomor>* / *.call <nomor>*
+  ↳ Melakukan panggilan telepon AI ke nomor tujuan.
+
+⚙️ *Pengaturan Live Engine (Owner Only):*
+• *!engine <nama_engine>*
+  ↳ Ganti Engine TTS live (edgetts / geminitts / elevenlabs / openai / animetts).
+• *!voice <nama_suara>*
+  ↳ Ganti suara TTS live (contoh: ms-MY-YasminNeural, id-ID-ArdiNeural, Puck, nova).
+
+📊 *Informasi & Status Bot:*
+• *!status* / *.ping*
+  ↳ Cek status sistem, uptime, memori, & rincian bot.
+• *!owner* / *.owner*
+  ↳ Cek status whitelist owner bot.
+• *!help* / *.menu*
+  ↳ Menampilkan menu bantuan ini.
+
+-----------------------------------
+ℹ️ *Konfigurasi Aktif:*
+• AI Model  : %s
+• TTS Engine: %s
+• TTS Voice : %s
+• Pitch     : %s`, AppConfig.GeminiModel, AppConfig.TTSEngine, AppConfig.TTSVoice, AppConfig.TTSPitch)
+		sendReply(client, msg, helpText)
+
+	case "!status", ".status", "!ping", ".ping":
+		uptime := time.Since(botStartTime).Truncate(time.Second)
+		var memStats runtime.MemStats
+		runtime.ReadMemStats(&memStats)
+		allocMB := float64(memStats.Alloc) / 1024 / 1024
+
+		statusText := fmt.Sprintf(`⚡ *BOT STATUS & SYSTEM METRICS* ⚡
+
+• *Status Connection*: Connected (Online)
+• *Bot Uptime*      : %s
+• *Memory Usage*    : %.2f MB
+• *Goroutines*      : %d
+• *AI Model*        : %s
+• *TTS Engine*      : %s
+• *TTS Voice*       : %s
+• *Owner Restricted*: %t`, uptime, allocMB, runtime.NumGoroutine(), AppConfig.GeminiModel, AppConfig.TTSEngine, AppConfig.TTSVoice, len(AppConfig.Owners) > 0)
+		sendReply(client, msg, statusText)
+
+	case "!owner", ".owner":
+		var ownerText string
+		if len(AppConfig.Owners) > 0 {
+			ownerText = fmt.Sprintf("👑 *DAFTAR OWNER BOT:*\n• %s\n\n_Hanya nomor terdaftar di atas yang dapat menggunakan perintah panggilan AI._", strings.Join(AppConfig.Owners, "\n• "))
+		} else {
+			ownerText = "🔓 *STATUS BOT:* Publik (Siapa saja dapat melakukan panggilan AI)."
+		}
+		sendReply(client, msg, ownerText)
+
+	case "!engine", ".engine":
+		senderUser := msg.Info.Sender.User
+		if !IsOwner(senderUser) {
+			sendReply(client, msg, "Maaf, perintah ini hanya dapat digunakan oleh Owner bot.")
+			return
+		}
+		if len(fields) < 2 {
+			sendReply(client, msg, "Gunakan format: !engine <edgetts|geminitts|elevenlabs|openai|animetts>")
+			return
+		}
+		newEngine := strings.ToLower(fields[1])
+		switch newEngine {
+		case "edgetts", "geminitts", "elevenlabs", "openai", "animetts", "google":
+			AppConfig.TTSEngine = newEngine
+			if newEngine == "geminitts" {
+				AppConfig.TTSVoice = "Puck"
+			} else if newEngine == "edgetts" {
+				AppConfig.TTSVoice = "ms-MY-YasminNeural"
+			}
+			sendReply(client, msg, fmt.Sprintf("✅ Berhasil mengubah TTS Engine ke: *%s* (Voice Default: %s)", newEngine, AppConfig.TTSVoice))
+		default:
+			sendReply(client, msg, "Engine tidak valid. Opsi yang tersedia: edgetts, geminitts, elevenlabs, openai, animetts, google.")
+		}
+
+	case "!voice", ".voice":
+		senderUser := msg.Info.Sender.User
+		if !IsOwner(senderUser) {
+			sendReply(client, msg, "Maaf, perintah ini hanya dapat digunakan oleh Owner bot.")
+			return
+		}
+		if len(fields) < 2 {
+			sendReply(client, msg, "Gunakan format: !voice <nama_suara>\nContoh: !voice ms-MY-YasminNeural")
+			return
+		}
+		newVoice := fields[1]
+		AppConfig.TTSVoice = newVoice
+		sendReply(client, msg, fmt.Sprintf("✅ Berhasil mengubah TTS Voice ke: *%s*", newVoice))
+
+	case "!aicall", ".aicall", "!call", ".call":
 		senderUser := msg.Info.Sender.User
 		if !IsOwner(senderUser) {
 			log.Printf("[Command] Denied call command from non-owner: %s", senderUser)
-			_, _ = client.SendMessage(context.Background(), msg.Info.Chat, &waProto.Message{
-				Conversation: buildStringPointer("Maaf, fitur ini hanya dapat digunakan oleh Owner bot."),
-			})
+			sendReply(client, msg, "Maaf, fitur ini hanya dapat digunakan oleh Owner bot.")
 			return
 		}
 
 		if len(fields) < 2 {
-			_, _ = client.SendMessage(context.Background(), msg.Info.Chat, &waProto.Message{
-				Conversation: buildStringPointer("Gunakan format: !aicall 628xxxxxxxx"),
-			})
+			sendReply(client, msg, "Gunakan format: !aicall 628xxxxxxxx")
 			return
 		}
 
@@ -164,16 +258,12 @@ func handleMessage(client *whatsmeow.Client, callerClient *meowcaller.Client, ms
 		targetNum = strings.ReplaceAll(targetNum, " ", "")
 
 		if targetNum == "" {
-			_, _ = client.SendMessage(context.Background(), msg.Info.Chat, &waProto.Message{
-				Conversation: buildStringPointer("Gunakan format: !aicall 628xxxxxxxx"),
-			})
+			sendReply(client, msg, "Gunakan format: !aicall 628xxxxxxxx")
 			return
 		}
 
 		targetJID := types.NewJID(targetNum, types.DefaultUserServer)
-		_, _ = client.SendMessage(context.Background(), msg.Info.Chat, &waProto.Message{
-			Conversation: buildStringPointer(fmt.Sprintf("Memulai panggilan AI ke nomor %s...", targetNum)),
-		})
+		sendReply(client, msg, fmt.Sprintf("Memulai panggilan AI ke nomor %s...", targetNum))
 
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
@@ -182,9 +272,7 @@ func handleMessage(client *whatsmeow.Client, callerClient *meowcaller.Client, ms
 		call, err := callerClient.Call(ctx, targetJID.String())
 		if err != nil {
 			log.Printf("[Command] Failed to place call: %v", err)
-			_, _ = client.SendMessage(context.Background(), msg.Info.Chat, &waProto.Message{
-				Conversation: buildStringPointer(fmt.Sprintf("Gagal menelpon: %v", err)),
-			})
+			sendReply(client, msg, fmt.Sprintf("Gagal menelpon: %v", err))
 			return
 		}
 
@@ -199,6 +287,22 @@ func handleMessage(client *whatsmeow.Client, callerClient *meowcaller.Client, ms
 			go session.StartVoiceLoop()
 		})
 	}
+}
+
+func sendReply(client *whatsmeow.Client, msg *events.Message, text string) {
+	participant := msg.Info.Sender.String()
+	stanzaID := msg.Info.ID
+
+	_, _ = client.SendMessage(context.Background(), msg.Info.Chat, &waProto.Message{
+		ExtendedTextMessage: &waProto.ExtendedTextMessage{
+			Text: buildStringPointer(text),
+			ContextInfo: &waProto.ContextInfo{
+				StanzaID:      buildStringPointer(stanzaID),
+				Participant:   buildStringPointer(participant),
+				QuotedMessage: msg.Message,
+			},
+		},
+	})
 }
 
 func getMessageBody(m *waProto.Message) string {
